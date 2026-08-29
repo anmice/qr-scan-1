@@ -1,1 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#111827">
+<title>QR Scan & Save</title>
+<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+<style>
+*{box-sizing:border-box}
+:root{--bg:#f5f7fb;--card:#fff;--text:#111827;--muted:#6b7280;--line:#e5e7eb;--accent:#111827;--soft:#eef2ff;--danger:#dc2626}
+body.dark{--bg:#0b0f19;--card:#151b28;--text:#f9fafb;--muted:#9ca3af;--line:#293241;--accent:#fff;--soft:#20283a}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.app{max-width:520px;margin:auto;min-height:100vh;padding:18px 16px 100px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+.brand{display:flex;align-items:center;gap:10px}
+.logo{width:42px;height:42px;border-radius:13px;background:var(--accent);color:var(--bg);display:grid;place-items:center;font-size:21px}
+h1{font-size:21px;margin:0}.sub{font-size:12px;color:var(--muted);margin-top:2px}
+.iconbtn{border:1px solid var(--line);background:var(--card);color:var(--text);width:42px;height:42px;border-radius:13px;font-size:18px;cursor:pointer}
+.card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:16px;box-shadow:0 8px 30px rgba(0,0,0,.05);margin-bottom:14px}
+#reader{width:100%;overflow:hidden;border-radius:16px}
+#reader video{border-radius:16px}
+.scan-actions{display:flex;gap:9px;margin-top:12px}
+button{font:inherit;cursor:pointer}
+.primary{flex:1;border:0;border-radius:13px;padding:13px;background:var(--accent);color:var(--bg);font-weight:700}
+.secondary{border:1px solid var(--line);border-radius:13px;padding:13px;background:transparent;color:var(--text);font-weight:600}
+.section-title{display:flex;justify-content:space-between;align-items:center;margin:18px 2px 10px}
+.section-title h2{font-size:17px;margin:0}.count{font-size:12px;color:var(--muted)}
+.result{display:none}
+.result-text{padding:12px;background:var(--soft);border-radius:13px;word-break:break-word;font-size:14px;margin-bottom:10px}
+.result-actions{display:flex;gap:8px}.result-actions button{flex:1}
+input{width:100%;padding:13px 14px;border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--text);outline:none}
+.item{padding:13px 0;border-bottom:1px solid var(--line)}
+.item:last-child{border-bottom:0}
+.item-top{display:flex;gap:10px;align-items:flex-start}
+.favicon{width:38px;height:38px;border-radius:11px;background:var(--soft);display:grid;place-items:center;flex:none}
+.item-text{min-width:0;flex:1}.item-title{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item-url{font-size:12px;color:var(--muted);word-break:break-all;margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.item-date{font-size:10px;color:var(--muted);margin-top:6px}
+.item-actions{display:flex;gap:7px;margin-top:9px;margin-left:48px}
+.small{padding:8px 10px;border:1px solid var(--line);background:transparent;color:var(--text);border-radius:9px;font-size:12px}
+.delete{color:var(--danger)}
+.empty{text-align:center;padding:28px 10px;color:var(--muted);font-size:13px}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(20px);background:#111827;color:#fff;padding:11px 15px;border-radius:12px;font-size:13px;opacity:0;pointer-events:none;transition:.25s;z-index:20}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.note{font-size:11px;color:var(--muted);margin-top:9px;line-height:1.4}
+#stopBtn{display:none}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <div class="brand">
+    <div class="logo">⌗</div>
+    <div><h1>QR Scan</h1><div class="sub">Scan & save your links</div></div>
+  </div>
+  <button class="iconbtn" id="themeBtn" aria-label="Toggle theme">☾</button>
+</header>
 
+<div class="card">
+  <div id="reader"></div>
+  <div class="scan-actions">
+    <button class="primary" id="startBtn">📷 Start Scanner</button>
+    <button class="secondary" id="stopBtn">Stop</button>
+  </div>
+  <div class="note">Camera access may require HTTPS or localhost. Allow camera permission when your browser asks.</div>
+</div>
+
+<div class="card result" id="resultCard">
+  <div class="section-title" style="margin-top:0"><h2>Scanned Result</h2></div>
+  <div class="result-text" id="resultText"></div>
+  <div class="result-actions">
+    <button class="primary" id="saveBtn">💾 Save</button>
+    <button class="secondary" id="copyBtn">Copy</button>
+    <button class="secondary" id="openBtn">Open</button>
+  </div>
+</div>
+
+<div class="section-title">
+  <h2>Saved History</h2>
+  <span class="count" id="count">0 saved</span>
+</div>
+
+<div class="card">
+  <input id="search" type="search" placeholder="Search saved links...">
+  <div id="history"></div>
+</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const STORAGE_KEY = "qr_scan_saved_v1";
+let history = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+let scanner = null;
+let scanning = false;
+let currentResult = "";
+
+const $ = id => document.getElementById(id);
+
+function toast(msg){
+  $("toast").textContent = msg;
+  $("toast").classList.add("show");
+  clearTimeout(window.toastTimer);
+  window.toastTimer = setTimeout(()=> $("toast").classList.remove("show"), 1800);
+}
+
+function saveHistory(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
+}
+
+function isUrl(text){
+  try { return /^https?:\/\//i.test(text) || !!new URL(text); }
+  catch(e){ return false; }
+}
+
+function normalizedUrl(text){
+  if(/^https?:\/\//i.test(text)) return text;
+  if(/^[\w.-]+\.[a-z]{2,}(\/.*)?$/i.test(text)) return "https://" + text;
+  return null;
+}
+
+function renderHistory(){
+  const q = $("search").value.trim().toLowerCase();
+  const filtered = history.filter(x => x.text.toLowerCase().includes(q));
+  $("count").textContent = history.length + (history.length === 1 ? " saved" : " saved");
+  if(!filtered.length){
+    $("history").innerHTML = `<div class="empty">${history.length ? "No matching saved items." : "No saved scans yet.<br>Scan a QR code and tap Save."}</div>`;
+    return;
+  }
+  $("history").innerHTML = filtered.map((x,i)=>{
+    const safe = escapeHtml(x.text);
+    const actualIndex = history.indexOf(x);
+    return `<div class="item">
+      <div class="item-top">
+        <div class="favicon">${normalizedUrl(x.text) ? "🔗" : "▦"}</div>
+        <div class="item-text">
+          <div class="item-title">${escapeHtml(x.title || (normalizedUrl(x.text) ? "Saved link" : "Saved QR result"))}</div>
+          <div class="item-url">${safe}</div>
+          <div class="item-date">${escapeHtml(x.date)}</div>
+        </div>
+      </div>
+      <div class="item-actions">
+        <button class="small" onclick="copyItem(${actualIndex})">Copy</button>
+        ${normalizedUrl(x.text) ? `<button class="small" onclick="openItem(${actualIndex})">Open</button>` : ""}
+        <button class="small delete" onclick="deleteItem(${actualIndex})">Delete</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]));
+}
+
+window.copyItem = async function(i){
+  try { await navigator.clipboard.writeText(history[i].text); toast("Copied"); }
+  catch(e){ toast("Copy failed"); }
+};
+window.openItem = function(i){
+  const url = normalizedUrl(history[i].text);
+  if(url) window.open(url, "_blank", "noopener,noreferrer");
+};
+window.deleteItem = function(i){
+  history.splice(i,1); saveHistory(); renderHistory(); toast("Deleted");
+};
+
+function showResult(text){
+  currentResult = text.trim();
+  $("resultText").textContent = currentResult;
+  $("resultCard").style.display = "block";
+  $("saveBtn").textContent = history.some(x=>x.text===currentResult) ? "✓ Saved" : "💾 Save";
+}
+
+function onScanSuccess(decodedText){
+  showResult(decodedText);
+  stopScanner();
+  toast("QR code scanned");
+}
+
+async function startScanner(){
+  if(scanning) return;
+  try{
+    scanner = new Html5Qrcode("reader");
+    const config = {fps:10, qrbox:{width:250,height:250}, aspectRatio:1};
+    await scanner.start({facingMode:"environment"}, config, onScanSuccess, ()=>{});
+    scanning = true;
+    $("startBtn").style.display = "none";
+    $("stopBtn").style.display = "block";
+  }catch(err){
+    toast("Camera could not start");
+    console.error(err);
+  }
+}
+
+async function stopScanner(){
+  if(!scanner || !scanning) return;
+  try{
+    await scanner.stop();
+    await scanner.clear();
+  }catch(e){}
+  scanning = false;
+  $("startBtn").style.display = "block";
+  $("stopBtn").style.display = "none";
+}
+
+$("startBtn").onclick = startScanner;
+$("stopBtn").onclick = stopScanner;
+$("search").oninput = renderHistory;
+
+$("saveBtn").onclick = ()=>{
+  if(!currentResult) return;
+  if(history.some(x=>x.text===currentResult)){
+    toast("Already saved");
+    return;
+  }
+  const url = normalizedUrl(currentResult);
+  history.unshift({
+    text: currentResult,
+    title: url ? (()=>{try{return new URL(url).hostname}catch(e){return "Saved link"}})() : "Saved QR result",
+    date: new Date().toLocaleString()
+  });
+  saveHistory(); renderHistory();
+  $("saveBtn").textContent = "✓ Saved";
+  toast("Saved to history");
+};
+
+$("copyBtn").onclick = async ()=>{
+  try { await navigator.clipboard.writeText(currentResult); toast("Copied"); }
+  catch(e){ toast("Copy failed"); }
+};
+
+$("openBtn").onclick = ()=>{
+  const url = normalizedUrl(currentResult);
+  if(url) window.open(url, "_blank", "noopener,noreferrer");
+  else toast("This QR is not a web link");
+};
+
+$("themeBtn").onclick = ()=>{
+  document.body.classList.toggle("dark");
+  localStorage.setItem("qr_theme", document.body.classList.contains("dark") ? "dark" : "light");
+  $("themeBtn").textContent = document.body.classList.contains("dark") ? "☀" : "☾";
+};
+
+if(localStorage.getItem("qr_theme")==="dark"){
+  document.body.classList.add("dark"); $("themeBtn").textContent="☀";
+}
+renderHistory();
+</script>
+</body>
+</html>
